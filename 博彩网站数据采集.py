@@ -6,6 +6,7 @@ from time import sleep
 from lxml import etree
 import openpyxl
 import requests
+import pymysql
 
 # 将浏览器隐藏
 option = webdriver.ChromeOptions()
@@ -13,7 +14,7 @@ option.add_argument('headless')  # 设置option
 option.add_argument(
     'user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36')
 browser = webdriver.Chrome(options=option)
-filePath = 'D:\\Work\\qqImgDownload\\bet.xlsx'
+filePath = './bet.xlsx'
 companyIdList = ['3', '6', '15']
 wb = openpyxl.Workbook()
 
@@ -47,6 +48,7 @@ def getDetailUrl(url, companyIdList):
     return companyNameList, companyUrlList
 
 
+# 获取某公司亚盘页面水位数据
 def getData(url):
     response = requests.get(url)
     page_cont = response.content
@@ -88,10 +90,60 @@ def getData(url):
     return items
 
 
+# 将数据写入excel文件
 def writeToExcel(sheetNo, companyName, dataList):
     sheet = wb.create_sheet(companyName, sheetNo)
     for row in range(len(dataList)):
         sheet.append(dataList[row])
+
+
+# 将数据写入数据库
+def writeToDB(companyName, dataList):
+    conn = pymysql.connect(host='localhost', user='root', password='root', database='testdb', charset='utf8')
+    cursor = conn.cursor()
+
+    # 定义要执行的SQL语句
+    sql = """
+    CREATE TABLE """ + companyName + """ (
+    id INT auto_increment PRIMARY KEY ,
+    match_time CHAR(10),
+    score CHAR(10),
+    hometeam CHAR(50) NOT NULL,
+    handicap CHAR(50) NOT NULL,
+    awayteam CHAR(50) NOT NULL,
+    record_time CHAR(30),
+    state CHAR(10) NOT NULL
+    )ENGINE=innodb DEFAULT CHARSET=utf8;
+    """
+
+    cursor.execute(sql)  # 执行SQL语句
+
+    for i in range(1, len(dataList)):
+        if (len(dataList[i][5]) < 1 and len(dataList[i][6]) < 1):
+            match_time = ' '
+            score = ' '
+            hometeam = dataList[i][0]
+            handicap = dataList[i][1]
+            awayteam = dataList[i][2]
+            record_time = dataList[i][3]
+            state = dataList[i][4]
+        else:
+            match_time = dataList[i][0]
+            score = dataList[i][1]
+            hometeam = dataList[i][2]
+            handicap = dataList[i][3]
+            awayteam = dataList[i][4]
+            record_time = dataList[i][5]
+            state = dataList[i][6]
+        sql2 = 'INSERT INTO ' + companyName + '(match_time, score, hometeam, handicap, awayteam, record_time, state) VALUES ("' + match_time + '", "' + score + '", "' + hometeam + '", "' + handicap + '", "' + awayteam + '", "' + record_time + '", "' + state + '");'
+
+        cursor.execute(sql2)  # 执行SQL语句
+
+    cursor.close()  # 关闭光标对象
+
+    conn.commit()  # 提交事务
+
+    conn.close()  # 关闭数据库连接
 
 
 def main():
@@ -102,6 +154,7 @@ def main():
     for i in range(len(companyUrlList)):
         matchData = getData(companyUrlList[i])
         writeToExcel(i, companyNameList[i], matchData)
+        writeToDB(companyNameList[i], matchData)
     wb.save(filename=filePath)
     browser.close()
 
